@@ -1,0 +1,300 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { TripPreferences, AIProvider, AIProviderConfig } from '../types';
+import { INTEREST_OPTIONS, BUDGET_OPTIONS, GROUP_COMPOSITION_OPTIONS, EXPERIENCE_OPTIONS, ATTRACTION_TYPE_OPTIONS } from '../constants';
+import { fetchOllamaModels, testGroqConnection } from '../services/aiService';
+import { CalendarIcon } from '../constants';
+
+type ConnectionStatus = 'idle' | 'testing' | 'ok' | 'error';
+
+interface AIProviderManagerProps {
+  providerState: PlannerFormProps['providerState'];
+}
+
+interface PlannerFormProps {
+  onPlanRequest: (preferences: TripPreferences, providerConfig: AIProviderConfig) => void;
+  isLoading: boolean;
+  providerState: {
+    provider: AIProvider;
+    setProvider: (p: AIProvider) => void;
+    groqApiKey: string;
+    setGroqApiKey: (k: string) => void;
+    ollamaUrl: string;
+    setOllamaUrl: (u: string) => void;
+    ollamaModel: string;
+    setOllamaModel: (m: string) => void;
+  }
+}
+
+// --- Helper Functions and Constants ---
+const getTodayString = () => {
+    const today = new Date();
+    today.setDate(today.getDate() + 1); // Start date from tomorrow
+    return today.toISOString().split('T')[0];
+};
+const labelStyles = "block text-sm font-medium text-slate-600 dark:text-slate-300";
+const inputStyles = "mt-1 block w-full bg-white text-slate-900 placeholder-slate-400 border-slate-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400 transition-colors duration-300";
+
+// --- Sub-Components ---
+
+const AIProviderManager: React.FC<AIProviderManagerProps> = ({ providerState }) => {
+    const { provider, setProvider, groqApiKey, setGroqApiKey, ollamaUrl, setOllamaUrl, ollamaModel, setOllamaModel } = providerState;
+
+    const [groqStatus, setGroqStatus] = useState<ConnectionStatus>('idle');
+    const [ollamaStatus, setOllamaStatus] = useState<ConnectionStatus>('idle');
+    const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([]);
+    
+    useEffect(() => {
+        if (groqApiKey) testGroqConnection(groqApiKey).then(ok => setGroqStatus(ok ? 'ok' : 'idle'));
+    }, []);
+
+    const handleTestGroq = async () => {
+        setGroqStatus('testing');
+        const ok = await testGroqConnection(groqApiKey);
+        setGroqStatus(ok ? 'ok' : 'error');
+    };
+    
+    const handleCheckOllama = async () => {
+        setOllamaStatus('testing');
+        setAvailableOllamaModels([]);
+        const models = await fetchOllamaModels(ollamaUrl);
+        if (models.length > 0) {
+            setAvailableOllamaModels(models);
+            if (!ollamaModel || !models.includes(ollamaModel)) {
+                setOllamaModel(models[0]);
+            }
+            setOllamaStatus('ok');
+        } else {
+            setOllamaStatus('error');
+        }
+    };
+
+    return (
+      <fieldset>
+        <legend className="sr-only">AI Provider Configuration</legend>
+        <label className={labelStyles}>AI Provider</label>
+        <div className="mt-2 rounded-lg p-1 bg-slate-200 dark:bg-slate-700 grid grid-cols-3 gap-1 transition-colors duration-300">
+            { (['gemini', 'groq', 'ollama'] as AIProvider[]).map(p => (
+              <button type="button" key={p} onClick={() => setProvider(p)}
+                className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 ${
+                  provider === p ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-400 shadow' : 'text-slate-600 dark:text-slate-300 hover:bg-white/50 dark:hover:bg-slate-900/20'
+                }`}
+              >{p.charAt(0).toUpperCase() + p.slice(1)}</button>
+            ))}
+        </div>
+        <div className="mt-3 space-y-3">
+            {provider === 'gemini' && <p className="text-xs text-slate-500 dark:text-slate-400">Using Google Gemini. API Key is pre-configured.</p>}
+            {provider === 'groq' && (
+              <div className="space-y-2">
+                <label htmlFor="groq-key" className={labelStyles}>Groq API Key</label>
+                <div className="flex gap-2">
+                  <input id="groq-key" type="password" value={groqApiKey} onChange={e => setGroqApiKey(e.target.value)} placeholder="gsk_..." className={inputStyles + " mt-0"} />
+                  <button type="button" onClick={handleTestGroq} disabled={!groqApiKey || groqStatus === 'testing'} className="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+                    {groqStatus === 'testing' ? '...' : 'Test'}
+                  </button>
+                </div>
+                {groqStatus === 'ok' && <p className="text-xs text-green-600 dark:text-green-400">Connection successful.</p>}
+                {groqStatus === 'error' && <p className="text-xs text-red-600 dark:text-red-400">Connection failed. Check key.</p>}
+              </div>
+            )}
+            {provider === 'ollama' && (
+              <div className="space-y-2">
+                <label htmlFor="ollama-url" className={labelStyles}>Ollama Server URL</label>
+                <div className="flex gap-2">
+                  <input id="ollama-url" type="text" value={ollamaUrl} onChange={e => setOllamaUrl(e.target.value)} className={inputStyles + " mt-0"} />
+                  <button type="button" onClick={handleCheckOllama} disabled={!ollamaUrl || ollamaStatus === 'testing'} className="px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+                    {ollamaStatus === 'testing' ? '...' : 'Check'}
+                  </button>
+                </div>
+                {ollamaStatus === 'ok' && (
+                   <div>
+                    <label htmlFor="ollama-model" className={labelStyles}>Model</label>
+                    <select id="ollama-model" value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} className={inputStyles}>
+                        {availableOllamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                   </div>
+                )}
+                {ollamaStatus === 'error' && <p className="text-xs text-red-600 dark:text-red-400">Connection failed. Is Ollama running?</p>}
+              </div>
+            )}
+        </div>
+      </fieldset>
+    );
+};
+
+const DatePicker: React.FC<{ value: string; onChange: (value: string) => void; min: string; }> = ({ value, onChange, min }) => {
+    const dateInputRef = useRef<HTMLInputElement>(null);
+    return (
+        <div className="relative mt-1">
+            <input
+                id="start-date"
+                ref={dateInputRef}
+                type="date"
+                name="startDate"
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                min={min}
+                required
+                className={`${inputStyles} mt-0 pr-10`}
+            />
+            <button
+                type="button"
+                className="absolute inset-y-0 right-0 flex items-center pr-3 group focus:outline-none"
+                onClick={() => dateInputRef.current?.showPicker()}
+                aria-label="Open date picker"
+                tabIndex={-1}
+            >
+                <CalendarIcon className="h-5 w-5 text-slate-400 group-hover:text-slate-600 dark:text-slate-400 dark:group-hover:text-slate-300 transition-colors" />
+            </button>
+        </div>
+    );
+};
+
+
+// --- Main Form Component ---
+
+const PlannerForm: React.FC<PlannerFormProps> = ({ onPlanRequest, isLoading, providerState }) => {
+  const [formData, setFormData] = useState<TripPreferences>({
+    origin: 'New York, USA',
+    destination: 'Rome, Italy',
+    duration: 5,
+    startDate: getTodayString(),
+    groupComposition: 'Family with kids',
+    budget: 'Mid-Range',
+    interests: ['History', 'Art & Culture', 'Food & Culinary'],
+    accommodationStyle: 'Apartment rental',
+    transportation: 'Public transport and walking',
+    specialNeeds: '',
+    experience: 'First-timer',
+    attractionType: 'A mix of both',
+  });
+
+  const { provider, groqApiKey, ollamaUrl, ollamaModel } = providerState;
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'number' ? parseInt(value) || 0 : value,
+    }));
+  };
+
+  const handleInterestChange = (interest: string) => {
+    setFormData(prev => ({
+      ...prev,
+      interests: prev.interests.includes(interest)
+        ? prev.interests.filter(i => i !== interest)
+        : [...prev.interests, interest],
+    }));
+  };
+
+  const isProviderConfigured = useMemo(() => {
+    if (provider === 'gemini') return !!process.env.API_KEY;
+    if (provider === 'groq') return !!groqApiKey; // Simple check, button provides richer status
+    if (provider === 'ollama') return !!ollamaUrl && !!ollamaModel;
+    return false;
+  }, [provider, groqApiKey, ollamaUrl, ollamaModel]);
+
+  const canSubmit = useMemo(() => {
+    return formData.origin && formData.destination && formData.duration > 0 && formData.interests.length > 0 && isProviderConfigured;
+  }, [formData, isProviderConfigured]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit || isLoading) return;
+    onPlanRequest(formData, { provider, groqApiKey, ollamaUrl, ollamaModel });
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg sticky top-28 transition-colors duration-300">
+      <h2 className="text-xl font-bold mb-4 text-slate-800 dark:text-slate-100">Your Trip Details</h2>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        
+        <AIProviderManager providerState={providerState} />
+
+        <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+            <fieldset>
+                <legend className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Core Details</legend>
+                <div className="space-y-4">
+                    <div>
+                        <label htmlFor="origin" className={labelStyles}>Origin</label>
+                        <input id="origin" name="origin" type="text" value={formData.origin} onChange={handleChange} required className={inputStyles} placeholder="e.g., New York, USA"/>
+                    </div>
+                    <div>
+                        <label htmlFor="destination" className={labelStyles}>Destination</label>
+                        <input id="destination" name="destination" type="text" value={formData.destination} onChange={handleChange} required className={inputStyles} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="duration" className={labelStyles}>Duration (days)</label>
+                            <input id="duration" name="duration" type="number" value={formData.duration} onChange={handleChange} min="1" required className={inputStyles} />
+                        </div>
+                        <div>
+                            <label htmlFor="start-date" className={labelStyles}>Start Date</label>
+                            <DatePicker value={formData.startDate} onChange={date => setFormData(p => ({ ...p, startDate: date }))} min={getTodayString()} />
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+        </div>
+
+        <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+            <fieldset>
+                <legend className={labelStyles}>What are your interests?</legend>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                    {INTEREST_OPTIONS.map(interest => (
+                    <label key={interest} className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input type="checkbox" checked={formData.interests.includes(interest)} onChange={() => handleInterestChange(interest)} className="rounded text-cyan-600 focus:ring-cyan-500 dark:text-cyan-400 dark:bg-slate-600 dark:border-slate-500 transition-colors duration-300"/>
+                        <span>{interest}</span>
+                    </label>
+                    ))}
+                </div>
+            </fieldset>
+        </div>
+
+        <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+            <fieldset>
+                <legend className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Optional Preferences</legend>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="budget" className={labelStyles}>Budget</label>
+                            <select id="budget" name="budget" value={formData.budget} onChange={handleChange} className={inputStyles}>
+                                {BUDGET_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                          <label htmlFor="groupComposition" className={labelStyles}>Group Composition</label>
+                          <select id="groupComposition" name="groupComposition" value={formData.groupComposition} onChange={handleChange} className={inputStyles}>
+                              {GROUP_COMPOSITION_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        </div>
+                    </div>
+                     <div>
+                        <label htmlFor="accommodationStyle" className={labelStyles}>Accommodation Style</label>
+                        <input id="accommodationStyle" name="accommodationStyle" type="text" value={formData.accommodationStyle} onChange={handleChange} placeholder="e.g., Boutique hotels" className={inputStyles} />
+                    </div>
+                    <div>
+                        <label htmlFor="specialNeeds" className={labelStyles}>Special Needs or Requests</label>
+                        <input id="specialNeeds" name="specialNeeds" type="text" value={formData.specialNeeds} onChange={handleChange} placeholder="e.g., Wheelchair access" className={inputStyles} />
+                    </div>
+                </div>
+            </fieldset>
+        </div>
+        
+        <button type="submit" disabled={isLoading || !canSubmit} className="w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-cyan-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed dark:disabled:bg-slate-600 flex items-center justify-center">
+            {isLoading ? (
+                <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Generating...
+                </>
+            ) : 'Generate My Itinerary'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default PlannerForm;

@@ -1,0 +1,5 @@
+{
+  "name": "AI Travel Planner",
+  "description": "Generate personalized travel itineraries using AI. Input your destination, preferences, and budget to receive a detailed day-by-day plan with activities, dining, and local tips.",
+  "requestFramePermissions": []
+}
