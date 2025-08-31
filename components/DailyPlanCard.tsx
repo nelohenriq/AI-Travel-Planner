@@ -1,7 +1,9 @@
 
+
 import React from 'react';
 import { DailyItinerary } from '../types';
 import { CalendarIcon, ActivityIcon, FoodIcon, TipIcon, ExternalLinkIcon, MapPinIcon } from '../constants';
+import { useTranslation } from '../contexts/LanguageContext';
 
 interface DailyPlanCardProps {
   dayPlan: DailyItinerary;
@@ -31,7 +33,7 @@ const ActivityItem: React.FC<ActivityItemProps> = ({ activity, destination }) =>
             href={googleMapsSearchUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
+            className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
             aria-label={`Find ${activity.description} on Google Maps`}
             title={`Find ${activity.description} on Google Maps`}
           >
@@ -72,7 +74,7 @@ const FoodItem: React.FC<{ food: DailyItinerary['food'][0]; destination: string;
                     href={googleMapsSearchUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-600"
+                    className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
                     aria-label={`Find ${food.suggestion} on Google Maps`}
                     title={`Find ${food.suggestion} on Google Maps`}
                 >
@@ -85,6 +87,7 @@ const FoodItem: React.FC<{ food: DailyItinerary['food'][0]; destination: string;
 
 
 const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) => {
+  const { t } = useTranslation();
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-shadow hover:shadow-md transition-colors duration-300">
       <div className="bg-slate-50 dark:bg-slate-800 p-4 border-b border-slate-200 dark:border-slate-700 transition-colors duration-300">
@@ -102,7 +105,7 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) =
         <div>
           <h3 className="font-semibold text-lg flex items-center gap-2 mb-3 text-cyan-700 dark:text-cyan-400">
             <ActivityIcon className="h-6 w-6" />
-            Activities
+            {t('activities')}
           </h3>
           <ul className="space-y-4 border-l-2 border-slate-200 dark:border-slate-600 pl-4 transition-colors duration-300">
             {(dayPlan.activities || []).map((activity, index) => (
@@ -116,7 +119,7 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) =
           <div>
             <h3 className="font-semibold text-lg flex items-center gap-2 mb-3 text-cyan-700 dark:text-cyan-400">
               <FoodIcon className="h-6 w-6" />
-              Dining Suggestions
+              {t('diningSuggestions')}
             </h3>
             <ul className="space-y-3">
               {(dayPlan.food || []).map((food, index) => (
@@ -127,7 +130,7 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) =
           <div>
             <h3 className="font-semibold text-lg flex items-center gap-2 mb-3 text-cyan-700 dark:text-cyan-400">
               <TipIcon className="h-6 w-6" />
-              Insider Tip
+              {t('insiderTip')}
             </h3>
             <p className="text-sm text-slate-600 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-400 dark:border-amber-500 p-3 rounded-r-md transition-colors duration-300">
               {dayPlan.insiderTip}

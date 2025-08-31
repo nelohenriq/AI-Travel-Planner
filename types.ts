@@ -1,3 +1,4 @@
+
 export type AIProvider = 'gemini' | 'groq' | 'ollama';
 
 export interface AIProviderConfig {
@@ -20,6 +21,7 @@ export interface TripPreferences {
   specialNeeds: string;
   experience: string;
   attractionType: string;
+  language: string;
 }
 
 export interface Activity {
@@ -47,6 +49,7 @@ export interface DailyItinerary {
 export interface AccommodationExample {
   name: string;
   priceRange: string;
+  bookingUrl?: string;
 }
 
 export interface Accommodation {
