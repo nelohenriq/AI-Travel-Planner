@@ -1,8 +1,9 @@
 
+
 import React, { useState } from 'react';
-import { ItineraryPlan, TripPreferences, FlightInfo, CostEstimation } from '../types';
+import { ItineraryPlan, TripPreferences, FlightInfo, CostEstimation, AccommodationExample } from '../types';
 import DailyPlanCard from './DailyPlanCard';
-import { PlaneIcon, BedIcon, InfoIcon, CurrencyDollarIcon, DownloadIcon, MailIcon } from '../constants';
+import { PlaneIcon, BedIcon, InfoIcon, CurrencyDollarIcon, DownloadIcon, MailIcon, MapPinIcon, ExternalLinkIcon } from '../constants';
 
 interface ItineraryDisplayProps {
   itinerary: ItineraryPlan | null;
@@ -154,6 +155,42 @@ const CostEstimationDisplay: React.FC<{ cost: CostEstimation }> = ({ cost }) => 
     </section>
 );
 
+const AccommodationExampleItem: React.FC<{ example: AccommodationExample; destination: string; }> = ({ example, destination }) => {
+    const googleMapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${example.name}, ${destination}`)}`;
+    const webSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${example.name} ${destination}`)}`;
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-3 rounded-md shadow-sm transition-colors duration-300 flex justify-between items-start gap-2 border border-slate-200 dark:border-slate-700">
+            <div className="flex-grow">
+                <p className="font-semibold text-slate-800 dark:text-slate-100">{example.name}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{example.priceRange}</p>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-1">
+                 <a
+                    href={webSearchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-600"
+                    aria-label={`Search for ${example.name}`}
+                    title={`Search for ${example.name}`}
+                >
+                    <ExternalLinkIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                </a>
+                <a
+                    href={googleMapsSearchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-600"
+                    aria-label={`Find ${example.name} on Google Maps`}
+                    title={`Find ${example.name} on Google Maps`}
+                >
+                    <MapPinIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                </a>
+            </div>
+        </div>
+    );
+}
+
 const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoading, error, preferences }) => {
   const [email, setEmail] = useState('');
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -256,16 +293,14 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
         <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors duration-300">
             <h3 className="font-bold text-lg flex items-center gap-2 text-slate-800 dark:text-slate-100"><BedIcon className="h-6 w-6 text-cyan-600 dark:text-cyan-400"/> Accommodation</h3>
             <p className="text-slate-700 dark:text-slate-300 mt-2">{accommodation?.recommendations}</p>
-            {accommodation?.examples && accommodation.examples.length > 0 && (
+            {accommodation?.examples && accommodation.examples.length > 0 && preferences && (
               <div className="mt-3 space-y-2">
                 <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-400">Examples:</h4>
-                <ul className="list-disc list-inside text-sm text-slate-600 dark:text-slate-300">
-                  {accommodation.examples.map((ex, index) => (
-                    <li key={index}>
-                      <span className="font-semibold">{ex.name}</span>: {ex.priceRange}
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-2">
+                    {accommodation.examples.map((ex, index) => (
+                        <AccommodationExampleItem key={index} example={ex} destination={preferences.destination} />
+                    ))}
+                </div>
               </div>
             )}
         </div>

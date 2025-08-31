@@ -38,7 +38,7 @@ const ITINERARY_PLAN_SCHEMA_DESCRIPTION = `
       }[]; // 1-2 specific examples of accommodation with estimated price ranges.
     };
     generalTips: {
-      transit: string; // Tips on getting around.
+      transit: string; // Tips on getting around the destination, including specific advice on traveling from the main airport to the city center.
       customs: string; // Notes on local customs or etiquette.
       weather: string; // Expected weather and packing advice.
       practicalAdvice: string; // Other tips like safety, currency, etc.
@@ -84,6 +84,7 @@ const buildBasePrompt = (prefs: TripPreferences, isGrounded: boolean): string =>
       - Provide only the name of the restaurant in the 'suggestion' property.
       - **Do NOT provide links for activities.** The UI will handle generating navigation links.
   4.  **Provide accommodation suggestions:** For each accommodation example, include a specific name and an estimated price range (e.g., per night).
+  5.  **Provide airport transit advice:** In the 'generalTips.transit' section, include specific, practical advice on getting from the destination's main airport to the city center (e.g., train, bus, taxi options with estimated costs and travel times).
   
   User Preferences:
   - Origin: ${prefs.origin}
