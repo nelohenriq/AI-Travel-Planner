@@ -1,6 +1,3 @@
-
-
-
 import React from 'react';
 import { DailyItinerary } from '../types';
 import { ActivityIcon, FoodIcon, TipIcon, ExternalLinkIcon, MapPinIcon } from '../constants';
@@ -12,6 +9,7 @@ interface DailyPlanCardProps {
   highlightedItem: string | null;
   itemRefs: Record<string, React.RefObject<HTMLDivElement>>;
   dayIndex: number;
+  onRefineRequest: (request: string) => void;
 }
 
 interface ItemProps {
@@ -63,8 +61,6 @@ interface FoodItemProps extends ItemProps {
   destination: string;
 }
 
-// FIX: The `itemRef` of type `RefObject<HTMLDivElement>` cannot be assigned to an `<li>` element.
-// Wrapped the content in a `<div>` and moved the ref and props to it, consistent with `ActivityItem`.
 const FoodItem: React.FC<FoodItemProps> = ({ food, destination, isHighlighted, itemRef }) => {
     const googleMapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${food.suggestion}, ${destination}`)}`;
     const tripAdvisorUrl = food.link || `https://www.tripadvisor.com/Search?q=${encodeURIComponent(`${food.suggestion} ${destination}`)}`;
@@ -107,19 +103,32 @@ const FoodItem: React.FC<FoodItemProps> = ({ food, destination, isHighlighted, i
     );
 }
 
-
-const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination, highlightedItem, itemRefs, dayIndex }) => {
+const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination, highlightedItem, itemRefs, dayIndex, onRefineRequest }) => {
   const { t } = useTranslation();
+
+  const refinementOptions = [
+    { labelKey: "makeMoreActive", prompt: "For day {{day}}, make the schedule more active by adding another engaging activity." },
+    { labelKey: "makeMoreRelaxed", prompt: "For day {{day}}, make the schedule more relaxed, perhaps by removing one activity or suggesting a more leisurely alternative." },
+    { labelKey: "newDinnerIdea", prompt: "For day {{day}}, suggest a different, highly-rated restaurant for dinner." },
+    { labelKey: "addKidFriendlyFun", prompt: "For day {{day}}, add a fun, kid-friendly activity suitable for the group composition." },
+  ];
+
+  const handleRefine = (requestTemplate: string) => {
+      onRefineRequest(requestTemplate.replace('{{day}}', dayPlan.day.toString()));
+  };
+
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-shadow hover:shadow-md transition-colors duration-300">
       <div className="bg-slate-50 dark:bg-slate-800 p-4 border-b border-slate-200 dark:border-slate-700 transition-colors duration-300">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-3">
-          <span className="bg-cyan-600 text-white rounded-md h-10 w-10 flex items-center justify-center font-extrabold">{dayPlan.day}</span>
-          <div>
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{dayPlan.date}</span>
-            <div className="text-xl font-semibold -mt-1 text-slate-800 dark:text-slate-100">{dayPlan.title}</div>
-          </div>
-        </h2>
+        <div className="flex justify-between items-center gap-3">
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-3">
+            <span className="bg-cyan-600 text-white rounded-md h-10 w-10 flex items-center justify-center font-extrabold">{dayPlan.day}</span>
+            <div>
+              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{dayPlan.date}</span>
+              <div className="text-xl font-semibold -mt-1 text-slate-800 dark:text-slate-100">{dayPlan.title}</div>
+            </div>
+          </h2>
+        </div>
       </div>
 
       <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white dark:bg-slate-800/50 transition-colors duration-300">
@@ -176,6 +185,21 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination, hig
               {dayPlan.insiderTip}
             </p>
           </div>
+        </div>
+      </div>
+      
+      <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+        <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3">{t('quickRefinements')}</h4>
+        <div className="flex flex-wrap gap-2">
+            {refinementOptions.map(opt => (
+                <button
+                    key={opt.labelKey}
+                    onClick={() => handleRefine(opt.prompt)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 dark:focus:ring-offset-slate-800"
+                >
+                    {t(opt.labelKey)}
+                </button>
+            ))}
         </div>
       </div>
     </div>

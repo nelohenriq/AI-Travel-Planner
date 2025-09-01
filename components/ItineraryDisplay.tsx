@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, createRef } from 'react';
 import { ItineraryPlan, TripPreferences, FlightInfo, CostEstimation } from '../types';
 import DailyPlanCard from './DailyPlanCard';
@@ -373,6 +372,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
                         highlightedItem={highlightedItem}
                         itemRefs={itemRefs.current}
                         dayIndex={dayIndex}
+                        onRefineRequest={onModify}
                       />
                   ))}
                   </div>
