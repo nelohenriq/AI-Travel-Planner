@@ -1,14 +1,14 @@
 
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { TripPreferences, ItineraryPlan, AIProvider, AIProviderConfig, DailyItinerary } from './types';
 import { generateItinerary, translateItinerary, suggestDestination, modifyItinerary } from './services/aiService';
 import PlannerForm from './components/PlannerForm';
+import ChatPlanner from './components/ChatPlanner';
 import ItineraryDisplay from './components/ItineraryDisplay';
 import ThemeToggle from './components/ThemeToggle';
 import LanguageToggle from './components/LanguageToggle';
 import { useTranslation, Language } from './contexts/LanguageContext';
-import { PlaneIcon } from './constants';
+import { PlaneIcon, ListIcon, ChatBubbleLeftRightIcon } from './constants';
 
 const getDayWithSuffix = (day: number, lang: string) => {
   if (lang !== 'en') return day; // Suffixes are English-specific
@@ -27,6 +27,8 @@ const localeMap: { [key: string]: string } = {
   fr: 'fr-FR',
 };
 
+type PlannerMode = 'form' | 'chat';
+
 const App: React.FC = () => {
   const [preferences, setPreferences] = useState<TripPreferences | null>(null);
   const [itinerary, setItinerary] = useState<ItineraryPlan | null>(null);
@@ -41,6 +43,7 @@ const App: React.FC = () => {
   
   // Theme state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [plannerMode, setPlannerMode] = useState<PlannerMode>('form');
   
   // AI Provider State
   const [provider, setProvider] = useState<AIProvider>(() => (localStorage.getItem('provider') as AIProvider) || 'gemini');
@@ -155,6 +158,38 @@ const App: React.FC = () => {
     }
   }, [language, t]);
 
+  const handleChatItineraryGenerated = useCallback((plan: ItineraryPlan, prefs: TripPreferences) => {
+    setError(null);
+    setItinerary(null);
+    setBaseItinerary(null);
+    setTranslatedItineraries({});
+
+    const userPrefs: TripPreferences = { ...prefs, language };
+    setPreferences(userPrefs);
+    setBaseItinerary(plan);
+    setTranslatedItineraries({ en: plan });
+    setItinerary(plan);
+    
+    const config = providerConfig || { provider: 'gemini' };
+
+    // Proactively translate to other languages in the background
+    const otherLanguages: Language[] = ['pt', 'fr'];
+    (async () => {
+        try {
+          const translations = await Promise.all(
+            otherLanguages.map(lang => translateItinerary(plan, lang, config))
+          );
+          setTranslatedItineraries(prev => ({
+            ...prev,
+            pt: translations[0],
+            fr: translations[1],
+          }));
+        } catch (err) {
+          console.warn("Background translation failed for chat-generated plan.", err);
+        }
+    })();
+  }, [language, providerConfig]);
+
   const handleItineraryModification = useCallback(async (modificationRequest: string) => {
     if (!baseItinerary || !providerConfig) return;
 
@@ -265,14 +300,36 @@ const App: React.FC = () => {
         </div>
       </header>
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6">
+            <div className="inline-flex items-center gap-1 bg-slate-200 dark:bg-slate-700 p-1 rounded-full">
+                {(['form', 'chat'] as PlannerMode[]).map(mode => (
+                    <button key={mode} onClick={() => setPlannerMode(mode)}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded-full flex items-center gap-2 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 ${
+                            plannerMode === mode ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-400 shadow' : 'text-slate-600 dark:text-slate-300 hover:bg-white/50 dark:hover:bg-slate-900/20'
+                        }`}
+                    >
+                        {mode === 'form' ? <ListIcon className="h-5 w-5" /> : <ChatBubbleLeftRightIcon className="h-5 w-5" />}
+                        {t(`planner_${mode}`)}
+                    </button>
+                ))}
+            </div>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-4 xl:col-span-3">
-            <PlannerForm onPlanRequest={handlePlanRequest} isLoading={isLoading} loadingText={loadingMessage} providerState={providerState} />
+            {plannerMode === 'form' ? (
+              <PlannerForm onPlanRequest={handlePlanRequest} isLoading={isLoading} loadingText={loadingMessage} providerState={providerState} />
+            ) : (
+              <ChatPlanner 
+                onItineraryGenerated={handleChatItineraryGenerated}
+                onGenerationError={setError}
+                providerState={providerState}
+              />
+            )}
           </div>
           <div className="lg:col-span-8 xl:col-span-9">
             <ItineraryDisplay 
               itinerary={displayedItinerary} 
-              isLoading={isLoading}
+              isLoading={isLoading && plannerMode === 'form'}
               isUpdating={isUpdating || isTranslating}
               error={error} 
               preferences={preferences}

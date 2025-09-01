@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
 import { TripPreferences, ItineraryPlan, AIProviderConfig } from '../types';
 import { tripAdvisorTool, handleTripAdvisorTool } from '../tools/tripAdvisorTool';
@@ -211,16 +210,20 @@ const generateWithGemini = async (prefs: TripPreferences): Promise<ItineraryPlan
             }
         }
         
-        const plan: ItineraryPlan = JSON.parse(jsonText.replace(/\\'/g, "'"));
-        
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (groundingChunks?.length) {
-          plan.sources = groundingChunks
-            .map((chunk: any) => chunk.web)
-            .filter((source: any) => source?.uri && source.title)
-            .map((source: any) => ({ uri: source.uri, title: source.title }));
+        try {
+            const plan: ItineraryPlan = JSON.parse(jsonText.replace(/\\'/g, "'"));
+            const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+            if (groundingChunks?.length) {
+              plan.sources = groundingChunks
+                .map((chunk: any) => chunk.web)
+                .filter((source: any) => source?.uri && source.title)
+                .map((source: any) => ({ uri: source.uri, title: source.title }));
+            }
+            return plan;
+        } catch (e) {
+            console.error("Failed to parse JSON from Gemini response:", jsonText, e);
+            throw new Error("The AI returned a plan in an unexpected format. Please try again.");
         }
-        return plan;
     } catch (error) {
         console.error("Error generating itinerary from Gemini API:", error, "Raw response:", response?.text);
         if (error instanceof SyntaxError) {
@@ -233,7 +236,7 @@ const generateWithGemini = async (prefs: TripPreferences): Promise<ItineraryPlan
 
 // Helper function to handle Groq API calls with model fallback
 const groqApiCallWithFallback = async (apiKey: string, bodyPayload: Omit<any, 'model'>): Promise<any> => {
-    const groqModels = ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"];
+    const groqModels = ["llama3-70b-8192", "llama3-8b-8192", "gemma-7b-it"];
     let lastError: Error | null = null;
 
     for (const model of groqModels) {
@@ -307,13 +310,18 @@ const generateWithGroq = async (prefs: TripPreferences, config: AIProviderConfig
                 continue;
             } else {
                 const jsonText = message.content;
-                const firstBraceIndex = jsonText.indexOf('{');
-                const lastBraceIndex = jsonText.lastIndexOf('}');
-                if (firstBraceIndex === -1 || lastBraceIndex === -1) {
-                    throw new Error("The AI returned a plan in an unexpected format.");
+                try {
+                  const firstBraceIndex = jsonText.indexOf('{');
+                  const lastBraceIndex = jsonText.lastIndexOf('}');
+                  if (firstBraceIndex === -1 || lastBraceIndex === -1) {
+                      throw new Error("No JSON object found in response.");
+                  }
+                  const sanitizedJsonText = jsonText.substring(firstBraceIndex, lastBraceIndex + 1);
+                  return JSON.parse(sanitizedJsonText);
+                } catch (e) {
+                    console.error("Failed to parse JSON from Groq response:", jsonText, e);
+                    throw new Error("The AI returned a plan in an unexpected format. Please try again.");
                 }
-                const sanitizedJsonText = jsonText.substring(firstBraceIndex, lastBraceIndex + 1);
-                return JSON.parse(sanitizedJsonText);
             }
         }
         throw new Error("The AI model did not produce a final plan after multiple tool calls.");
@@ -343,7 +351,15 @@ const generateWithOllama = async (prefs: TripPreferences, config: AIProviderConf
         });
         if (!response.ok) throw new Error(`Ollama server returned an error: ${response.statusText}`);
         const data = await response.json();
-        return JSON.parse(data.response);
+        if (typeof data.response !== 'string') {
+            throw new Error("Ollama response format is invalid.");
+        }
+        try {
+            return JSON.parse(data.response);
+        } catch (e) {
+            console.error("Failed to parse JSON from Ollama response:", data.response, e);
+            throw new Error("The AI returned a plan in an unexpected format. Please try again.");
+        }
     } catch (error) {
         console.error("Error generating itinerary from Ollama:", error);
         throw new Error(`Failed to get a valid plan from Ollama. Ensure the server is running. ${error instanceof Error ? error.message : ''}`);
@@ -412,10 +428,14 @@ const modifyWithGemini = async (currentPlan: ItineraryPlan, modificationRequest:
         const responseText = response.text;
         if (!responseText) throw new Error("AI returned an empty response during modification.");
 
-        const jsonBlockMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-        const jsonText = jsonBlockMatch?.[1] ? jsonBlockMatch[1].trim() : responseText.substring(responseText.indexOf('{'), responseText.lastIndexOf('}') + 1);
-        
-        return JSON.parse(jsonText.replace(/\\'/g, "'"));
+        try {
+            const jsonBlockMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+            const jsonText = jsonBlockMatch?.[1] ? jsonBlockMatch[1].trim() : responseText.substring(responseText.indexOf('{'), responseText.lastIndexOf('}') + 1);
+            return JSON.parse(jsonText.replace(/\\'/g, "'"));
+        } catch (e) {
+            console.error("Failed to parse JSON from Gemini modification response:", responseText, e);
+            throw new Error("The AI returned a modified plan in an unexpected format.");
+        }
     } catch (error) {
         console.error("Error modifying itinerary with Gemini:", error);
         throw new Error("Failed to modify the plan with Gemini AI.");
@@ -449,12 +469,17 @@ const modifyWithGroq = async (currentPlan: ItineraryPlan, modificationRequest: s
                 }
             } else {
                 const jsonText = message.content;
-                 const firstBraceIndex = jsonText.indexOf('{');
-                const lastBraceIndex = jsonText.lastIndexOf('}');
-                if (firstBraceIndex === -1 || lastBraceIndex === -1) {
+                try {
+                    const firstBraceIndex = jsonText.indexOf('{');
+                    const lastBraceIndex = jsonText.lastIndexOf('}');
+                    if (firstBraceIndex === -1 || lastBraceIndex === -1) {
+                        throw new Error("No JSON object found in response.");
+                    }
+                    return JSON.parse(jsonText.substring(firstBraceIndex, lastBraceIndex + 1));
+                } catch(e) {
+                    console.error("Failed to parse JSON from Groq modification response:", jsonText, e);
                     throw new Error("The AI returned a modified plan in an unexpected format.");
                 }
-                return JSON.parse(jsonText.substring(firstBraceIndex, lastBraceIndex + 1));
             }
         }
         throw new Error("The AI model did not produce a final plan after modification attempts.");
@@ -475,7 +500,12 @@ const modifyWithOllama = async (currentPlan: ItineraryPlan, modificationRequest:
         });
         if (!response.ok) throw new Error(`Ollama server error during modification: ${response.statusText}`);
         const data = await response.json();
-        return JSON.parse(data.response);
+        try {
+            return JSON.parse(data.response);
+        } catch (e) {
+            console.error("Failed to parse JSON from Ollama modification response:", data.response, e);
+            throw new Error("The AI returned a modified plan in an unexpected format.");
+        }
     } catch (error) {
         console.error("Error modifying itinerary with Ollama:", error);
         throw new Error(`Failed to modify plan with Ollama. ${error instanceof Error ? error.message : ''}`);
@@ -659,4 +689,122 @@ export const fetchOllamaModels = async (url: string): Promise<string[]> => {
         const data = await response.json();
         return data.models.map((model: any) => model.name);
     } catch { return []; }
+};
+
+// --- Chat Functions ---
+
+interface ChatMessage {
+    role: 'user' | 'model';
+    text: string;
+}
+
+const CHAT_SYSTEM_INSTRUCTION = `You are a friendly and helpful travel planning assistant. Your goal is to gather a user's travel preferences step-by-step through a natural conversation. Ask one question at a time.
+
+You must gather the following pieces of information:
+- Origin (e.g., New York, USA)
+- Destination (e.g., Rome, Italy)
+- Trip Duration (in days, as a number)
+- Start Date (in YYYY-MM-DD format)
+- Group Composition (e.g., 'Solo', 'Couple', 'Family with kids')
+- Budget ('Budget-Friendly', 'Mid-Range', or 'Luxury')
+- Key Interests (an array of strings from the user's description)
+- Accommodation Style (e.g., 'Apartment rental')
+- Transportation Preference (e.g., 'Public transport and walking')
+
+Once you have gathered ALL of the above information, confirm with the user that you have everything you need to build their plan.
+
+Upon user confirmation, your **final response** MUST be a single, valid JSON object, and NOTHING ELSE. No introductory text, no markdown fences. The JSON object must have this exact structure:
+\`{ "preferences": { ... an object matching the TripPreferences type ... }, "itinerary": { ... an object matching the ItineraryPlan type ... } }\`
+
+To create the \`itinerary\` part of the JSON, follow all the detailed instructions for itinerary generation, including finding coordinates, flights, costs, packing lists, etc.
+The \`preferences\` part of the JSON should be filled with the information you gathered during the conversation. For fields you didn't gather (like \`specialNeeds\`), use an empty string. The language should be 'en' by default.`;
+
+const sendChatWithGemini = async (messages: ChatMessage[]): Promise<string> => {
+    if (!ai) throw new Error("Google Gemini API key not configured.");
+    
+    const contents = messages.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.text }]
+    }));
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents,
+            config: {
+                systemInstruction: CHAT_SYSTEM_INSTRUCTION
+            }
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error sending chat message with Gemini:", error);
+        throw new Error("Failed to get a response from Gemini chat.");
+    }
+};
+
+const sendChatWithGroq = async (messages: ChatMessage[], config: AIProviderConfig): Promise<string> => {
+    if (!config.groqApiKey) throw new Error("Groq API key not provided.");
+
+    const formattedMessages = [
+        { role: 'system', content: CHAT_SYSTEM_INSTRUCTION },
+        ...messages.map(msg => ({
+            role: msg.role === 'model' ? 'assistant' : 'user',
+            content: msg.text
+        }))
+    ];
+
+    try {
+        const data = await groqApiCallWithFallback(config.groqApiKey, {
+            messages: formattedMessages,
+            temperature: 0.7,
+        });
+        const message = data.choices[0]?.message?.content;
+        if (!message) throw new Error("Groq API returned an empty message.");
+        return message;
+    } catch (error) {
+        console.error("Error sending chat message with Groq:", error);
+        throw new Error(`Failed to get a response from Groq. ${error instanceof Error ? error.message : ''}`);
+    }
+};
+
+const sendChatWithOllama = async (messages: ChatMessage[], config: AIProviderConfig): Promise<string> => {
+    if (!config.ollamaUrl || !config.ollamaModel) throw new Error("Ollama URL or model not configured.");
+
+    const formattedMessages = messages.map(msg => ({
+        role: msg.role === 'model' ? 'assistant' : 'user',
+        content: msg.text
+    }));
+
+    try {
+        const response = await fetch(`${config.ollamaUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: config.ollamaModel,
+                messages: [
+                    { role: 'system', content: CHAT_SYSTEM_INSTRUCTION },
+                    ...formattedMessages
+                ],
+                stream: false
+            })
+        });
+        if (!response.ok) throw new Error(`Ollama server returned an error: ${response.statusText}`);
+        const data = await response.json();
+        const message = data.message?.content;
+        if (typeof message !== 'string') {
+            throw new Error("Ollama chat response format is invalid.");
+        }
+        return message;
+    } catch (error) {
+        console.error("Error sending chat message with Ollama:", error);
+        throw new Error(`Failed to get a response from Ollama. ${error instanceof Error ? error.message : ''}`);
+    }
+};
+
+export const sendChatMessage = async (messages: ChatMessage[], config: AIProviderConfig): Promise<string> => {
+    switch (config.provider) {
+        case 'groq': return await sendChatWithGroq(messages, config);
+        case 'ollama': return await sendChatWithOllama(messages, config);
+        case 'gemini': default: return await sendChatWithGemini(messages);
+    }
 };

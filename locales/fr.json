@@ -92,5 +92,11 @@
   "group_Solo": "Solo",
   "group_Couple": "Couple",
   "group_Family with kids": "Famille avec enfants",
-  "group_Group of friends": "Groupe d'amis"
+  "group_Group of friends": "Groupe d'amis",
+  "planner_form": "Formulaire",
+  "planner_chat": "Chat",
+  "chatWelcome": "Bonjour ! Je suis votre planificateur de voyage IA. Pour commencer, où souhaitez-vous aller ?",
+  "chatPlaceholder": "Écrivez votre message...",
+  "sendMessage": "Envoyer",
+  "chatGenerating": "J'ai généré votre itinéraire ! Vous pouvez le voir à droite et nous pouvons continuer à l'affiner ici."
 }

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import { ItineraryPlan, Location } from '../types';
 
@@ -107,7 +106,7 @@ const MapView: React.FC<MapViewProps> = ({ itinerary, onMarkerClick }) => {
 
         const points: MapPoint[] = [];
         
-        itinerary.accommodation.examples.forEach((acc, index) => {
+        (itinerary.accommodation.examples || []).forEach((acc, index) => {
             if (acc.location) points.push({
                 id: `acc-${index}`,
                 location: acc.location,
@@ -117,8 +116,8 @@ const MapView: React.FC<MapViewProps> = ({ itinerary, onMarkerClick }) => {
             });
         });
 
-        itinerary.dailyItineraries.forEach((day, dayIndex) => {
-            day.activities.forEach((activity, activityIndex) => {
+        (itinerary.dailyItineraries || []).forEach((day, dayIndex) => {
+            (day.activities || []).forEach((activity, activityIndex) => {
                 if (activity.location) points.push({
                     id: `activity-${dayIndex}-${activityIndex}`,
                     location: activity.location,
@@ -127,7 +126,7 @@ const MapView: React.FC<MapViewProps> = ({ itinerary, onMarkerClick }) => {
                     day: day.day
                 });
             });
-            day.food.forEach((food, foodIndex) => {
+            (day.food || []).forEach((food, foodIndex) => {
                 if (food.location) points.push({
                     id: `food-${dayIndex}-${foodIndex}`,
                     location: food.location,
@@ -167,7 +166,7 @@ const MapView: React.FC<MapViewProps> = ({ itinerary, onMarkerClick }) => {
 
     }, [itinerary, onMarkerClick]);
 
-    const legendDays = itinerary.dailyItineraries.map(day => ({
+    const legendDays = (itinerary.dailyItineraries || []).map(day => ({
         day: day.day,
         color: DAY_COLORS[(day.day - 1) % DAY_COLORS.length]
     }));

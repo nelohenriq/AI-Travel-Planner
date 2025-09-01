@@ -216,12 +216,12 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
 
   // Create refs for each item that can be highlighted
   if (itinerary) {
-      itinerary.dailyItineraries.forEach((day, dayIndex) => {
-          day.activities.forEach((_, activityIndex) => {
+      (itinerary.dailyItineraries || []).forEach((day, dayIndex) => {
+          (day.activities || []).forEach((_, activityIndex) => {
               const id = `activity-${dayIndex}-${activityIndex}`;
               if (!itemRefs.current[id]) itemRefs.current[id] = createRef<HTMLDivElement>();
           });
-          day.food.forEach((_, foodIndex) => {
+          (day.food || []).forEach((_, foodIndex) => {
               const id = `food-${dayIndex}-${foodIndex}`;
               if (!itemRefs.current[id]) itemRefs.current[id] = createRef<HTMLDivElement>();
           });
@@ -347,7 +347,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
         <div className="relative">
           {isUpdating && (
               <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 flex flex-col items-center justify-center rounded-lg z-20 transition-opacity duration-300">
-                  <svg className="animate-spin h-8 w-8 text-cyan-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-8 w-8 text-cyan-600" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>

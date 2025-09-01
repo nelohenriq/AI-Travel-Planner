@@ -92,5 +92,11 @@
   "group_Solo": "Solo",
   "group_Couple": "Couple",
   "group_Family with kids": "Family with kids",
-  "group_Group of friends": "Group of friends"
+  "group_Group of friends": "Group of friends",
+  "planner_form": "Form Planner",
+  "planner_chat": "Chat Planner",
+  "chatWelcome": "Hello! I'm your AI travel planner. To start, where would you like to go?",
+  "chatPlaceholder": "Type your message...",
+  "sendMessage": "Send",
+  "chatGenerating": "I've generated your itinerary! You can see it on the right and we can continue refining it here."
 }
