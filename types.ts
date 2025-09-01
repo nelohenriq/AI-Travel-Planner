@@ -24,10 +24,16 @@ export interface TripPreferences {
   language: string;
 }
 
+export interface Location {
+  latitude: number;
+  longitude: number;
+}
+
 export interface Activity {
   time: string;
   description: string;
   details?: string;
+  location?: Location;
 }
 
 export interface FoodSuggestion {
@@ -35,6 +41,7 @@ export interface FoodSuggestion {
   suggestion: string;
   notes?: string;
   link?: string;
+  location?: Location;
 }
 
 export interface DailyItinerary {
@@ -50,6 +57,7 @@ export interface AccommodationExample {
   name: string;
   priceRange: string;
   bookingUrl?: string;
+  location?: Location;
 }
 
 export interface Accommodation {
@@ -87,6 +95,21 @@ export interface CostEstimation {
   total: string;
 }
 
+export interface PackingListItem {
+  item: string;
+  notes: string;
+}
+
+export interface PackingListCategory {
+  category: string;
+  items: PackingListItem[];
+}
+
+export interface PackingList {
+    packingTips: string;
+    categories: PackingListCategory[];
+}
+
 export interface ItineraryPlan {
   tripTitle: string;
   tripOverview: string;
@@ -96,4 +119,5 @@ export interface ItineraryPlan {
   flightInfo?: FlightInfo;
   sources?: GroundingSource[];
   costEstimation?: CostEstimation;
+  packingList?: PackingList;
 }

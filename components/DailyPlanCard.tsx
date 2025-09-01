@@ -1,44 +1,56 @@
 
 
+
 import React from 'react';
 import { DailyItinerary } from '../types';
-import { CalendarIcon, ActivityIcon, FoodIcon, TipIcon, ExternalLinkIcon, MapPinIcon } from '../constants';
+import { ActivityIcon, FoodIcon, TipIcon, ExternalLinkIcon, MapPinIcon } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 
 interface DailyPlanCardProps {
   dayPlan: DailyItinerary;
   destination: string;
+  highlightedItem: string | null;
+  itemRefs: Record<string, React.RefObject<HTMLDivElement>>;
+  dayIndex: number;
 }
 
-interface ActivityItemProps {
+interface ItemProps {
+  isHighlighted: boolean;
+  itemRef: React.RefObject<HTMLDivElement>;
+}
+
+interface ActivityItemProps extends ItemProps {
   activity: DailyItinerary['activities'][0];
   destination: string;
 }
 
-const ActivityItem: React.FC<ActivityItemProps> = ({ activity, destination }) => {
+const ActivityItem: React.FC<ActivityItemProps> = ({ activity, destination, isHighlighted, itemRef }) => {
   const googleMapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${activity.description}, ${destination}`)}`;
+  const highlightClass = isHighlighted ? 'ring-2 ring-cyan-500 ring-offset-2 dark:ring-offset-slate-800 rounded-md' : '';
 
   return (
     <li className="relative">
       <div className="absolute -left-[27px] top-1 h-3 w-3 bg-slate-300 dark:bg-slate-500 rounded-full border-2 border-white dark:border-slate-800/50 transition-colors duration-300" />
-      <div className="flex justify-between items-start gap-2">
-        <div className="flex-grow">
-          <p className="font-semibold text-slate-800 dark:text-slate-100">
-            <span className="font-normal">{activity.time}:</span> {activity.description}
-          </p>
-          {activity.details && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{activity.details}</p>}
-        </div>
-        <div className="flex-shrink-0">
-          <a
-            href={googleMapsSearchUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
-            aria-label={`Find ${activity.description} on Google Maps`}
-            title={`Find ${activity.description} on Google Maps`}
-          >
-            <MapPinIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-          </a>
+      <div ref={itemRef} className={`transition-all duration-300 p-2 -m-2 ${highlightClass}`}>
+        <div className="flex justify-between items-start gap-2">
+          <div className="flex-grow">
+            <p className="font-semibold text-slate-800 dark:text-slate-100">
+              <span className="font-normal">{activity.time}:</span> {activity.description}
+            </p>
+            {activity.details && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{activity.details}</p>}
+          </div>
+          <div className="flex-shrink-0">
+            <a
+              href={googleMapsSearchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
+              aria-label={`Find ${activity.description} on Google Maps`}
+              title={`Find ${activity.description} on Google Maps`}
+            >
+              <MapPinIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+            </a>
+          </div>
         </div>
       </div>
     </li>
@@ -46,47 +58,57 @@ const ActivityItem: React.FC<ActivityItemProps> = ({ activity, destination }) =>
 };
 
 
-const FoodItem: React.FC<{ food: DailyItinerary['food'][0]; destination: string; }> = ({ food, destination }) => {
+interface FoodItemProps extends ItemProps {
+  food: DailyItinerary['food'][0];
+  destination: string;
+}
+
+// FIX: The `itemRef` of type `RefObject<HTMLDivElement>` cannot be assigned to an `<li>` element.
+// Wrapped the content in a `<div>` and moved the ref and props to it, consistent with `ActivityItem`.
+const FoodItem: React.FC<FoodItemProps> = ({ food, destination, isHighlighted, itemRef }) => {
     const googleMapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${food.suggestion}, ${destination}`)}`;
     const tripAdvisorUrl = food.link || `https://www.tripadvisor.com/Search?q=${encodeURIComponent(`${food.suggestion} ${destination}`)}`;
+    const highlightClass = isHighlighted ? 'ring-2 ring-cyan-500' : '';
 
     return (
-        <li className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-md transition-colors duration-300 flex justify-between items-start gap-2">
-            <div className="flex-grow">
-                <p>
-                    <span className="font-semibold text-slate-800 dark:text-slate-100">{food.meal}: </span>
-                    {food.suggestion}
-                </p>
-                {food.notes && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{food.notes}</p>}
-            </div>
-            <div className="flex-shrink-0 flex items-center gap-1">
-                <a
-                    href={tripAdvisorUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-600"
-                    aria-label={`Search for ${food.suggestion} on TripAdvisor`}
-                    title={`Search for ${food.suggestion} on TripAdvisor`}
-                >
-                    <ExternalLinkIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                </a>
-                <a
-                    href={googleMapsSearchUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
-                    aria-label={`Find ${food.suggestion} on Google Maps`}
-                    title={`Find ${food.suggestion} on Google Maps`}
-                >
-                    <MapPinIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-                </a>
+        <li>
+            <div ref={itemRef} className={`bg-slate-50 dark:bg-slate-700/50 p-3 rounded-md transition-all duration-300 flex justify-between items-start gap-2 ${highlightClass}`}>
+                <div className="flex-grow">
+                    <p>
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">{food.meal}: </span>
+                        {food.suggestion}
+                    </p>
+                    {food.notes && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{food.notes}</p>}
+                </div>
+                <div className="flex-shrink-0 flex items-center gap-1">
+                    <a
+                        href={tripAdvisorUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-600"
+                        aria-label={`Search for ${food.suggestion} on TripAdvisor`}
+                        title={`Search for ${food.suggestion} on TripAdvisor`}
+                    >
+                        <ExternalLinkIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    </a>
+                    <a
+                        href={googleMapsSearchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:bg-slate-200 dark:focus:bg-slate-700"
+                        aria-label={`Find ${food.suggestion} on Google Maps`}
+                        title={`Find ${food.suggestion} on Google Maps`}
+                    >
+                        <MapPinIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                    </a>
+                </div>
             </div>
         </li>
     );
 }
 
 
-const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) => {
+const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination, highlightedItem, itemRefs, dayIndex }) => {
   const { t } = useTranslation();
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-shadow hover:shadow-md transition-colors duration-300">
@@ -108,9 +130,18 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) =
             {t('activities')}
           </h3>
           <ul className="space-y-4 border-l-2 border-slate-200 dark:border-slate-600 pl-4 transition-colors duration-300">
-            {(dayPlan.activities || []).map((activity, index) => (
-              <ActivityItem key={index} activity={activity} destination={destination} />
-            ))}
+            {(dayPlan.activities || []).map((activity, index) => {
+              const id = `activity-${dayIndex}-${index}`;
+              return (
+                <ActivityItem 
+                  key={index} 
+                  activity={activity} 
+                  destination={destination} 
+                  isHighlighted={highlightedItem === id}
+                  itemRef={itemRefs[id]}
+                />
+              );
+            })}
           </ul>
         </div>
 
@@ -122,9 +153,18 @@ const DailyPlanCard: React.FC<DailyPlanCardProps> = ({ dayPlan, destination }) =
               {t('diningSuggestions')}
             </h3>
             <ul className="space-y-3">
-              {(dayPlan.food || []).map((food, index) => (
-                <FoodItem key={index} food={food} destination={destination} />
-              ))}
+              {(dayPlan.food || []).map((food, index) => {
+                const id = `food-${dayIndex}-${index}`;
+                return (
+                  <FoodItem 
+                    key={index} 
+                    food={food} 
+                    destination={destination}
+                    isHighlighted={highlightedItem === id}
+                    itemRef={itemRefs[id]}
+                  />
+                )
+              })}
             </ul>
           </div>
           <div>

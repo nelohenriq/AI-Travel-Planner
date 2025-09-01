@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
 import { TripPreferences, ItineraryPlan, AIProviderConfig } from '../types';
 import { tripAdvisorTool, handleTripAdvisorTool } from '../tools/tripAdvisorTool';
@@ -9,57 +10,73 @@ if (!process.env.API_KEY) {
 const ai = process.env.API_KEY ? new GoogleGenAI({ apiKey: process.env.API_KEY }) : null;
 
 
+// New tool definition for OpenAI-compatible APIs like Groq
+const openAITripAdvisorTool = {
+    type: "function" as const,
+    function: {
+        name: "searchTripAdvisor",
+        description: "Gets a TripAdvisor search URL for a specific restaurant in a given city. Use this to provide a link for dining suggestions.",
+        parameters: {
+            type: "object",
+            properties: {
+                restaurantName: { type: "string", description: "The name of the restaurant to search for." },
+                destination: { type: "string", description: "The city where the restaurant is located." },
+            },
+            required: ["restaurantName", "destination"],
+        },
+    },
+};
+
+
 const ITINERARY_PLAN_SCHEMA_DESCRIPTION = `
   You must produce a JSON object with the following structure. Do not add any text before or after the JSON object.
 
+  interface Location { latitude: number; longitude: number; }
+
   interface ItineraryPlan {
-    tripTitle: string; // A catchy and descriptive title for the trip.
-    tripOverview: string; // A short, engaging paragraph summarizing the trip's theme and highlights.
-    costEstimation: {
-      accommodation: string; // Estimated cost range for accommodation.
-      activities: string;    // Estimated cost range for activities.
-      food: string;          // Estimated cost range for food.
-      total: string;         // Total estimated cost range for the trip.
-    };
-    flightInfo: {
-      suggestions: {
-        airline: string; // Name of the airline.
-        priceRange: string; // Estimated price range for a round trip.
-        notes: string; // Any relevant notes about the flight.
-      }[];
-      googleFlightsUrl: string; // A pre-filled Google Flights URL for the user's trip.
-    };
+    tripTitle: string; // Catchy, descriptive title.
+    tripOverview: string; // Engaging summary paragraph.
+    costEstimation: { ... }; // Estimated costs for accommodation, activities, food, and total.
+    flightInfo: { ... }; // 2-3 flight suggestions and a Google Flights URL.
     accommodation: {
-      recommendations: string; // Advice on best neighborhoods or areas to stay in.
+      recommendations: string;
       examples: {
-          name: string; // A specific example of accommodation (hotel or apartment name).
-          priceRange: string; // Estimated price range per night.
-          bookingUrl?: string; // Optional: A direct booking.com search URL for the accommodation.
-      }[]; // 1-2 specific examples of accommodation.
+          name: string; // Specific hotel/apartment name.
+          priceRange: string;
+          bookingUrl?: string; // booking.com URL for the specific accommodation.
+          location?: Location; // Geographic coordinates.
+      }[];
     };
-    generalTips: {
-      transit: string; // Tips on getting around the destination, including airport to city center advice.
-      customs: string; // Notes on local customs, etiquette, or important phrases.
-      weather: string; // Expected weather for the travel dates and what to pack.
-      practicalAdvice: string; // Other practical tips like safety, currency, etc.
-    };
+    generalTips: { ... }; // Tips for transit, customs, weather, and practical advice.
     dailyItineraries: {
       day: number;
-      date: string; // The specific date or relative day.
-      title: string; // A theme for the day.
+      date: string;
+      title: string;
       activities: {
-        time: string; // Suggested time for the activity.
-        description: string; // Name of the activity or attraction.
-        details?: string; // More details about the activity (booking info, recommendations, etc.).
+        time: string;
+        description: string;
+        details?: string;
+        location?: Location; // Geographic coordinates for the activity.
       }[];
       food: {
-        meal: string; // The meal type (Lunch, Dinner, etc.).
-        suggestion: string; // A specific restaurant suggestion or a type of food to try.
-        notes?: string; // Details like reservation needed, dietary notes, or atmosphere.
-        link?: string; // A direct TripAdvisor search URL for the suggestion.
+        meal: string;
+        suggestion: string; // Specific restaurant name.
+        notes?: string;
+        link?: string; // TripAdvisor URL.
+        location?: Location; // Geographic coordinates for the restaurant.
       }[];
-      insiderTip: string; // A helpful 'local' tip for the day.
+      insiderTip: string;
     }[];
+    packingList: {
+      packingTips: string; // General packing advice based on weather and activities.
+      categories: {
+        category: string; // e.g., 'Clothing', 'Documents', 'Electronics'.
+        items: {
+          item: string; // The item to pack.
+          notes: string; // e.g., '2 pairs, waterproof', 'for formal dinner'.
+        }[];
+      }[];
+    };
   }
 `;
 
@@ -74,21 +91,13 @@ const buildBasePrompt = (prefs: TripPreferences): string => {
   You are an expert travel planner. Your task is to create a detailed, personalized, and realistic travel itinerary in English.
   
   **CRITICAL INSTRUCTIONS:**
-  1.  **Research and include flight suggestions:** 
-      - Find 2-3 flight options for a trip from ${prefs.origin} to ${prefs.destination}.
-      - Provide estimated price ranges for a round trip.
-      - Generate a pre-filled Google Flights URL for a round-trip flight from ${prefs.origin} to ${prefs.destination}, starting on the specified date for the trip's duration.
-  2.  **Provide a cost estimation:**
-      - Estimate costs for the entire trip based on the user's budget preference.
-      - Break it down into 'accommodation', 'activities', and 'food', and provide a 'total' estimated range.
-  3.  **Provide dining suggestions:**
-      - For every dining suggestion, suggest a specific, highly-rated restaurant.
-      - **For each restaurant, you MUST use the 'searchTripAdvisor' tool** to generate a search URL.
-      - Place the URL returned by the tool into the 'link' property for that dining suggestion.
-      - Provide only the name of the restaurant in the 'suggestion' property.
-      - **Do NOT provide links for activities.** The UI will handle generating navigation links.
-  4.  **Provide accommodation suggestions:** For each accommodation example, include a specific name, an estimated price range (e.g., per night), and a booking.com search URL for the specific accommodation in the 'bookingUrl' field.
-  5.  **Provide airport transit advice:** In the 'generalTips.transit' section, include specific, practical advice on getting from the destination's main airport to the city center (e.g., train, bus, taxi options with estimated costs and travel times).
+  1.  **Find Coordinates:** For EVERY accommodation, activity, and restaurant you suggest, you MUST find its geographic coordinates and include them in the 'location' field as { "latitude": <number>, "longitude": <number> }.
+  2.  **Research Flights:** Find 2-3 flight options from ${prefs.origin} to ${prefs.destination} and generate a pre-filled Google Flights URL.
+  3.  **Estimate Costs:** Provide a cost breakdown for 'accommodation', 'activities', 'food', and a 'total' estimate based on the user's budget.
+  4.  **Suggest Dining:** For every dining suggestion, suggest a specific, real restaurant. Use the 'searchTripAdvisor' tool to generate a search URL for each one and place it in the 'link' property.
+  5.  **Suggest Accommodation:** For each accommodation example, include a specific name, price, a booking.com search URL, and its geographic coordinates.
+  6.  **Provide Transit Advice:** In 'generalTips.transit', give specific advice on getting from the destination's main airport to the city center.
+  7.  **Generate a Packing List:** Create a personalized packing list in the 'packingList' field. Base it on the destination's weather for the travel dates, the planned activities, and the trip duration. Organize it into logical categories like 'Clothing', 'Documents & Money', 'Toiletries', 'Electronics', and 'Miscellaneous'. Provide helpful notes for items.
   
   User Preferences:
   - Origin: ${prefs.origin}
@@ -222,56 +231,61 @@ const generateWithGemini = async (prefs: TripPreferences): Promise<ItineraryPlan
     }
 };
 
-const generateWithGroq = async (prefs: TripPreferences, config: AIProviderConfig): Promise<ItineraryPlan> => {
-    if (!config.groqApiKey) throw new Error("Groq API key not provided.");
-    
-    const prompt = buildBasePrompt(prefs) + `
-    
-    IMPORTANT INSTRUCTION: For each day in the 'dailyItineraries' array, the 'food' array MUST contain at least two entries: one for 'Lunch' and one for 'Dinner'.
-    
-    ` + ITINERARY_PLAN_SCHEMA_DESCRIPTION;
+// Helper function to handle Groq API calls with model fallback
+const groqApiCallWithFallback = async (apiKey: string, bodyPayload: Omit<any, 'model'>): Promise<any> => {
+    const groqModels = ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"];
+    let lastError: Error | null = null;
 
-    const openAITools = [{
-        type: "function" as const,
-        function: {
-            name: "searchTripAdvisor",
-            description: "Gets a TripAdvisor search URL for a specific restaurant in a given city. Use this to provide a link for dining suggestions.",
-            parameters: {
-                type: "object",
-                properties: {
-                    restaurantName: { type: "string", description: "The name of the restaurant to search for." },
-                    destination: { type: "string", description: "The city where the restaurant is located." },
-                },
-                required: ["restaurantName", "destination"],
-            },
-        },
-    }];
-
-    const messages: any[] = [{ role: "user", content: prompt }];
-
-    try {
-        for (let i = 0; i < 5; i++) { // Allow up to 5 rounds of tool calls
+    for (const model of groqModels) {
+        try {
             const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${config.groqApiKey}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    messages: messages,
-                    model: "llama-3.3-70b-versatile",
-                    temperature: 0.7,
-                    tools: openAITools,
-                    tool_choice: "auto",
-                })
+                body: JSON.stringify({ ...bodyPayload, model })
             });
 
             if (!response.ok) {
                 const errorBody = await response.json();
-                throw new Error(`Groq API error: ${errorBody.error?.message || 'Unknown error'}`);
+                const errorMessage = `Groq API error with model ${model}: ${errorBody.error?.message || 'Unknown error'}`;
+                console.warn(errorMessage);
+                lastError = new Error(errorMessage);
+                continue; // Try next model
             }
+            // If response is OK, we've succeeded.
+            return await response.json();
+        } catch (error) {
+            console.warn(`Request failed for Groq model '${model}'. Trying next...`, error);
+            lastError = error instanceof Error ? error : new Error(String(error));
+        }
+    }
+    // If the loop completes without returning, it means all models failed.
+    throw lastError || new Error("All configured Groq models failed.");
+};
 
-            const data = await response.json();
+
+const generateWithGroq = async (prefs: TripPreferences, config: AIProviderConfig): Promise<ItineraryPlan> => {
+    if (!config.groqApiKey) throw new Error("Groq API key not provided.");
+    
+    const prompt = buildBasePrompt(prefs) + `
+    After using any necessary tools, you must produce a single, valid JSON object containing the complete itinerary.
+    Adhere strictly to all instructions from the base prompt.
+    `;
+
+    const openAITools = [openAITripAdvisorTool];
+    const messages: any[] = [{ role: "user", content: prompt }];
+
+    try {
+        for (let i = 0; i < 5; i++) { // Allow up to 5 rounds of tool calls
+            const data = await groqApiCallWithFallback(config.groqApiKey, {
+                messages: messages,
+                temperature: 0.7,
+                tools: openAITools,
+                tool_choice: "auto"
+            });
+
             const message = data.choices[0]?.message;
             if (!message) throw new Error("Groq API returned an empty message.");
             messages.push(message);
@@ -344,6 +358,139 @@ export const generateItinerary = async (prefs: TripPreferences, config: AIProvid
     }
 };
 
+// --- Itinerary Modification Functions ---
+
+const buildModificationPrompt = (currentPlan: ItineraryPlan, modificationRequest: string): string => {
+  return `
+    You are an expert travel planner AI. Your task is to modify an existing travel itinerary based on a user's request.
+
+    **CRITICAL INSTRUCTIONS:**
+    1.  Analyze the provided JSON of the current itinerary.
+    2.  Analyze the user's modification request.
+    3.  Generate a **complete, new itinerary JSON object** that incorporates the requested change.
+    4.  **Do not just output the changed part.** You must return the full, updated itinerary object.
+    5.  Maintain the exact same JSON schema as the original, including all fields like 'location' and 'packingList'.
+    6.  If the user requests to add or change a restaurant, you **MUST use the 'searchTripAdvisor' tool** to get a new search URL for it and place it in the 'link' property. You must also find and add its 'location' coordinates.
+    7.  If the change affects activities or duration, consider if the 'packingList' needs minor adjustments and make them.
+    8.  Ensure all other parts of the itinerary (like timings and daily themes) remain logical and consistent after the change.
+    9.  Respond ONLY with the raw JSON object, without any markdown formatting (like \`\`\`json) or extra text.
+
+    **Current Itinerary JSON:**
+    ${JSON.stringify(currentPlan, null, 2)}
+
+    **User's Modification Request:**
+    "${modificationRequest}"
+  `;
+};
+
+const modifyWithGemini = async (currentPlan: ItineraryPlan, modificationRequest: string): Promise<ItineraryPlan> => {
+    if (!ai) throw new Error("Google Gemini API key not configured.");
+    const prompt = buildModificationPrompt(currentPlan, modificationRequest);
+
+    // This logic is nearly identical to generateWithGemini, just with a different initial prompt
+    const model = "gemini-2.5-flash";
+    const tools = [tripAdvisorTool];
+    const conversationHistory: { role: string; parts: Part[] }[] = [{ role: 'user', parts: [{ text: prompt }] }];
+    let response!: GenerateContentResponse;
+
+    try {
+        for (let i = 0; i < 5; i++) {
+            const result = await ai.models.generateContent({ model, contents: conversationHistory, config: { tools } });
+            response = result;
+            const candidate = response.candidates?.[0];
+            if (!candidate) throw new Error("AI modification did not return a candidate.");
+            if (!candidate.content?.parts) break;
+
+            conversationHistory.push({ role: 'model', parts: candidate.content.parts });
+            const functionCalls = candidate.content.parts.filter(p => !!p.functionCall).map(p => p.functionCall!);
+            if (functionCalls.length === 0) break;
+
+            const toolResponseParts: Part[] = functionCalls.map(handleTripAdvisorTool);
+            conversationHistory.push({ role: 'tool', parts: toolResponseParts });
+        }
+
+        const responseText = response.text;
+        if (!responseText) throw new Error("AI returned an empty response during modification.");
+
+        const jsonBlockMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+        const jsonText = jsonBlockMatch?.[1] ? jsonBlockMatch[1].trim() : responseText.substring(responseText.indexOf('{'), responseText.lastIndexOf('}') + 1);
+        
+        return JSON.parse(jsonText.replace(/\\'/g, "'"));
+    } catch (error) {
+        console.error("Error modifying itinerary with Gemini:", error);
+        throw new Error("Failed to modify the plan with Gemini AI.");
+    }
+};
+
+const modifyWithGroq = async (currentPlan: ItineraryPlan, modificationRequest: string, config: AIProviderConfig): Promise<ItineraryPlan> => {
+    if (!config.groqApiKey) throw new Error("Groq API key not provided for modification.");
+    const prompt = buildModificationPrompt(currentPlan, modificationRequest);
+    const openAITools = [openAITripAdvisorTool];
+    const messages: any[] = [{ role: "user", content: prompt }];
+
+    try {
+        for (let i = 0; i < 5; i++) {
+            const data = await groqApiCallWithFallback(config.groqApiKey, {
+                messages,
+                temperature: 0.7,
+                tools: openAITools,
+                tool_choice: "auto"
+            });
+
+            const message = data.choices[0]?.message;
+            if (!message) throw new Error("Groq API returned an empty message during modification.");
+            messages.push(message);
+
+            if (message.tool_calls) {
+                for (const toolCall of message.tool_calls) {
+                    const functionCallForHandler = { name: toolCall.function.name, args: JSON.parse(toolCall.function.arguments) };
+                    const toolResponsePart = handleTripAdvisorTool(functionCallForHandler);
+                    messages.push({ tool_call_id: toolCall.id, role: "tool", name: toolResponsePart.functionResponse.name, content: JSON.stringify(toolResponsePart.functionResponse.response) });
+                }
+            } else {
+                const jsonText = message.content;
+                 const firstBraceIndex = jsonText.indexOf('{');
+                const lastBraceIndex = jsonText.lastIndexOf('}');
+                if (firstBraceIndex === -1 || lastBraceIndex === -1) {
+                    throw new Error("The AI returned a modified plan in an unexpected format.");
+                }
+                return JSON.parse(jsonText.substring(firstBraceIndex, lastBraceIndex + 1));
+            }
+        }
+        throw new Error("The AI model did not produce a final plan after modification attempts.");
+    } catch (error) {
+        console.error("Error modifying itinerary with Groq:", error);
+        throw new Error(`Failed to modify plan with Groq. ${error instanceof Error ? error.message : ''}`);
+    }
+};
+
+const modifyWithOllama = async (currentPlan: ItineraryPlan, modificationRequest: string, config: AIProviderConfig): Promise<ItineraryPlan> => {
+    if (!config.ollamaUrl || !config.ollamaModel) throw new Error("Ollama URL or model not configured for modification.");
+    const prompt = buildModificationPrompt(currentPlan, modificationRequest);
+
+    try {
+        const response = await fetch(`${config.ollamaUrl}/api/generate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: config.ollamaModel, prompt, format: "json", stream: false })
+        });
+        if (!response.ok) throw new Error(`Ollama server error during modification: ${response.statusText}`);
+        const data = await response.json();
+        return JSON.parse(data.response);
+    } catch (error) {
+        console.error("Error modifying itinerary with Ollama:", error);
+        throw new Error(`Failed to modify plan with Ollama. ${error instanceof Error ? error.message : ''}`);
+    }
+};
+
+export const modifyItinerary = async (currentPlan: ItineraryPlan, modificationRequest: string, config: AIProviderConfig): Promise<ItineraryPlan> => {
+    switch (config.provider) {
+        case 'groq': return modifyWithGroq(currentPlan, modificationRequest, config);
+        case 'ollama': return modifyWithOllama(currentPlan, modificationRequest, config);
+        case 'gemini': default: return modifyWithGemini(currentPlan, modificationRequest);
+    }
+};
+
+
 // --- Translation Functions ---
 
 const buildTranslationPrompt = (itinerary: ItineraryPlan, targetLanguage: string) => {
@@ -351,10 +498,11 @@ const buildTranslationPrompt = (itinerary: ItineraryPlan, targetLanguage: string
     return `
       You are an expert translator. Your task is to translate all user-facing string values in the following JSON object to ${languageName}.
       **CRITICAL INSTRUCTIONS:**
-      1.  Translate EVERY string value.
-      2.  Do NOT touch the JSON structure, keys, or any non-string values (like numbers or URLs in 'link'/'googleFlightsUrl' properties).
-      3.  If a string is a proper name (e.g., "Colosseum", "Eiffel Tower", "Pizzarium Bonci"), keep the original name.
-      4.  Ensure your output is ONLY the translated JSON object, with no extra text or markdown formatting.
+      1.  Translate EVERY user-facing string value (titles, descriptions, tips, notes, etc.).
+      2.  Do NOT touch the JSON structure, keys, or any non-string values (like numbers, coordinates, or URLs).
+      3.  The 'category' names in the 'packingList' should be translated (e.g., "Clothing" to "Vêtements").
+      4.  If a string is a proper name (e.g., "Colosseum", "Eiffel Tower", "Pizzarium Bonci"), keep the original name.
+      5.  Ensure your output is ONLY the translated JSON object, with no extra text or markdown formatting.
 
       Here is the JSON object to translate:
       ${JSON.stringify(itinerary, null, 2)}
@@ -379,19 +527,10 @@ const translateWithGemini = async (prompt: string): Promise<ItineraryPlan> => {
 const translateWithGroq = async (prompt: string, config: AIProviderConfig): Promise<ItineraryPlan> => {
     if (!config.groqApiKey) throw new Error("Groq API key not provided for translation.");
     try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${config.groqApiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [{ role: "user", content: prompt }], model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" }
-            })
+        const data = await groqApiCallWithFallback(config.groqApiKey, {
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
         });
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(`Groq API error: ${errorBody.error?.message || 'Unknown error'}`);
-        }
-        const data = await response.json();
         return JSON.parse(data.choices[0].message.content);
     } catch (error) {
         console.error("Error translating with Groq:", error);
@@ -462,19 +601,10 @@ const suggestWithGemini = async (prompt: string): Promise<DestinationSuggestion>
 const suggestWithGroq = async (prompt: string, config: AIProviderConfig): Promise<DestinationSuggestion> => {
     if (!config.groqApiKey) throw new Error("Groq API key not provided for suggestion.");
     try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${config.groqApiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [{ role: "user", content: prompt }], model: "openai/gpt-oss-20b",
-                response_format: { type: "json_object" }
-            })
+        const data = await groqApiCallWithFallback(config.groqApiKey, {
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
         });
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(`Groq API error for suggestion: ${errorBody.error?.message || 'Unknown error'}`);
-        }
-        const data = await response.json();
         return JSON.parse(data.choices[0].message.content);
     } catch (error) {
         console.error("Error suggesting destination with Groq:", error);

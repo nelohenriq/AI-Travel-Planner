@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { TripPreferences, ItineraryPlan, AIProvider, AIProviderConfig, DailyItinerary } from './types';
-import { generateItinerary, translateItinerary, suggestDestination } from './services/aiService';
+import { generateItinerary, translateItinerary, suggestDestination, modifyItinerary } from './services/aiService';
 import PlannerForm from './components/PlannerForm';
 import ItineraryDisplay from './components/ItineraryDisplay';
 import ThemeToggle from './components/ThemeToggle';
@@ -33,6 +33,8 @@ const App: React.FC = () => {
   const [baseItinerary, setBaseItinerary] = useState<ItineraryPlan | null>(null);
   const [translatedItineraries, setTranslatedItineraries] = useState<Record<string, ItineraryPlan>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isTranslating, setIsTranslating] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const { t, language, isLoaded } = useTranslation();
@@ -108,7 +110,6 @@ const App: React.FC = () => {
     try {
       let finalPrefs = { ...prefs };
 
-      // Step 1: Suggest a destination if needed
       if (shouldSuggest) {
         setLoadingMessage(t('suggestingDestination'));
         const suggestion = await suggestDestination(prefs, config);
@@ -119,53 +120,117 @@ const App: React.FC = () => {
       const userPrefs: TripPreferences = { ...finalPrefs, language };
       setPreferences(userPrefs);
 
-      // Step 2: Generate base itinerary in English
       const generationPrefs: TripPreferences = { ...finalPrefs, language: 'en' };
       const englishPlan = await generateItinerary(generationPrefs, config);
       
-      // Step 3: Proactively translate to other languages
-      const otherLanguages: Language[] = ['pt', 'fr'];
-      const translationPromises = otherLanguages.map(lang => 
-        translateItinerary(englishPlan, lang, config)
-      );
-
-      const settledResults = await Promise.allSettled(translationPromises);
-      const allTranslations: Record<string, ItineraryPlan> = { en: englishPlan };
-
-      settledResults.forEach((result, index) => {
-        const lang = otherLanguages[index];
-        if (result.status === 'fulfilled') {
-          allTranslations[lang] = result.value;
-        } else {
-          console.error(`Failed to translate itinerary to ${lang}:`, result.reason);
-        }
-      });
-      
-      // Step 4: Update all states
+      // Set English plan immediately
       setBaseItinerary(englishPlan);
-      setTranslatedItineraries(allTranslations);
-      setItinerary(allTranslations[language] || englishPlan);
+      setTranslatedItineraries({ en: englishPlan });
+      setItinerary(englishPlan);
+      setIsLoading(false);
+      setLoadingMessage('');
+      
+      // Proactively translate to other languages in the background
+      const otherLanguages: Language[] = ['pt', 'fr'];
+      (async () => {
+        try {
+          const translations = await Promise.all(
+            otherLanguages.map(lang => translateItinerary(englishPlan, lang, config))
+          );
+          setTranslatedItineraries(prev => ({
+            ...prev,
+            pt: translations[0],
+            fr: translations[1],
+          }));
+        } catch (err) {
+          console.warn("Background translation failed. On-demand translation will be used as a fallback.", err);
+        }
+      })();
 
     } catch (err: any) {
-      console.error("Error during itinerary generation/translation:", err);
+      console.error("Error during itinerary generation:", err);
       setError(err.message || 'Failed to generate itinerary. Please check your inputs or API provider settings.');
-    } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
   }, [language, t]);
-  
-  // Effect to handle switching between cached translations when language changes
-  useEffect(() => {
-    if (Object.keys(translatedItineraries).length > 0) {
-      const newItineraryForLang = translatedItineraries[language];
-      if (newItineraryForLang) {
-        setItinerary(newItineraryForLang);
+
+  const handleItineraryModification = useCallback(async (modificationRequest: string) => {
+    if (!baseItinerary || !providerConfig) return;
+
+    setIsUpdating(true);
+    setError(null);
+
+    try {
+      // Step 1: Modify the base (English) itinerary
+      const newEnglishPlan = await modifyItinerary(baseItinerary, modificationRequest, providerConfig);
+
+      // Step 2: Update states, resetting existing translations and triggering proactive translation
+      setBaseItinerary(newEnglishPlan);
+      setTranslatedItineraries({ en: newEnglishPlan });
+
+      if (language === 'en') {
+        setItinerary(newEnglishPlan);
       } else {
-        setItinerary(baseItinerary);
+        // Translate to current language to update UI
+        const translatedPlan = await translateItinerary(newEnglishPlan, language, providerConfig);
+        setItinerary(translatedPlan);
+        setTranslatedItineraries(prev => ({ ...prev, [language]: translatedPlan }));
       }
+      
+      // Step 3: Proactively translate other languages in the background
+      const otherLanguages = (['pt', 'fr'] as Language[]).filter(l => l !== language);
+      (async () => {
+        try {
+          const translations = await Promise.all(
+            otherLanguages.map(lang => translateItinerary(newEnglishPlan, lang, providerConfig))
+          );
+          setTranslatedItineraries(prev => {
+            const newCache = { ...prev };
+            otherLanguages.forEach((lang, index) => {
+              newCache[lang] = translations[index];
+            });
+            return newCache;
+          });
+        } catch(err) {
+            console.warn("Background re-translation failed. On-demand will be used as fallback.", err);
+        }
+      })();
+
+    } catch (err: any) {
+      console.error("Error during itinerary modification:", err);
+      setError(err.message || 'Failed to modify the itinerary. Please try again.');
+    } finally {
+      setIsUpdating(false);
     }
-  }, [language, translatedItineraries, baseItinerary]);
+  }, [baseItinerary, providerConfig, language]);
+  
+  // Effect to handle on-demand translation when language changes
+  useEffect(() => {
+    // If a plan exists but we don't have a translation for the current language
+    if (baseItinerary && !translatedItineraries[language] && providerConfig) {
+      const translateOnDemand = async () => {
+        setIsTranslating(true);
+        setError(null);
+        try {
+          const translatedPlan = await translateItinerary(baseItinerary, language, providerConfig);
+          setTranslatedItineraries(prev => ({ ...prev, [language]: translatedPlan }));
+          setItinerary(translatedPlan);
+        } catch (err: any) {
+          console.error(`Failed to translate on-demand to ${language}:`, err);
+          setError(err.message || `Failed to load translation for ${language}. Displaying original version.`);
+          // Fallback to the base itinerary if translation fails
+          setItinerary(baseItinerary);
+        } finally {
+          setIsTranslating(false);
+        }
+      };
+      translateOnDemand();
+    } else if (translatedItineraries[language]) {
+      // If we already have the translation, just switch to it
+      setItinerary(translatedItineraries[language]);
+    }
+  }, [language, translatedItineraries, baseItinerary, providerConfig]);
 
 
   const providerState = {
@@ -207,9 +272,11 @@ const App: React.FC = () => {
           <div className="lg:col-span-8 xl:col-span-9">
             <ItineraryDisplay 
               itinerary={displayedItinerary} 
-              isLoading={isLoading} 
+              isLoading={isLoading}
+              isUpdating={isUpdating || isTranslating}
               error={error} 
               preferences={preferences}
+              onModify={handleItineraryModification}
             />
           </div>
         </div>

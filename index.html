@@ -11,6 +11,8 @@
       }
     </script>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <style>
       body { font-family: 'Inter', sans-serif; }
       /* Hide the default calendar icon in WebKit-based browsers (Chrome, Safari, Edge) */
@@ -28,6 +30,21 @@
       }
       input[type=number] {
         -moz-appearance: textfield;
+      }
+      .leaflet-popup-content-wrapper {
+        background-color: #fff;
+        color: #333;
+        border-radius: 8px;
+      }
+      .dark .leaflet-popup-content-wrapper {
+        background-color: #1f2937; /* slate-800 */
+        color: #d1d5db; /* slate-300 */
+      }
+      .dark .leaflet-popup-tip {
+        background-color: #1f2937; /* slate-800 */
+      }
+      .dark .leaflet-tile-pane {
+        filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
       }
     </style>
   <script type="importmap">

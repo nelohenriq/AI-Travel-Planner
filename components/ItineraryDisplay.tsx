@@ -1,7 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { ItineraryPlan, TripPreferences, FlightInfo, CostEstimation, AccommodationExample } from '../types';
+
+import React, { useState, useRef, useEffect, createRef } from 'react';
+import { ItineraryPlan, TripPreferences, FlightInfo, CostEstimation } from '../types';
 import DailyPlanCard from './DailyPlanCard';
-import { PlaneIcon, BedIcon, InfoIcon, CurrencyDollarIcon, DownloadIcon, MailIcon, MapPinIcon, ExternalLinkIcon, BookingIcon } from '../constants';
+import ItineraryEditor from './ItineraryEditor';
+import MapView from './MapView';
+import PackingListDisplay from './PackingListDisplay';
+import { PlaneIcon, BedIcon, InfoIcon, CurrencyDollarIcon, DownloadIcon, MailIcon, MapPinIcon, ExternalLinkIcon, BookingIcon, MapIcon, ListIcon } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -10,9 +14,13 @@ import html2canvas from 'html2canvas';
 interface ItineraryDisplayProps {
   itinerary: ItineraryPlan | null;
   isLoading: boolean;
+  isUpdating: boolean;
   error: string | null;
   preferences: TripPreferences | null;
+  onModify: (modificationRequest: string) => Promise<void>;
 }
+
+type ItineraryView = 'list' | 'map';
 
 const LoadingSkeleton: React.FC = () => (
     <div className="animate-pulse space-y-6">
@@ -196,21 +204,61 @@ const SourcesSection: React.FC<{ sources: ItineraryPlan['sources'] }> = ({ sourc
     );
 }
 
-const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoading, error, preferences }) => {
+const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoading, isUpdating, error, preferences, onModify }) => {
   const { t } = useTranslation();
   const itineraryContentRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [email, setEmail] = useState('');
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [view, setView] = useState<ItineraryView>('list');
+  const [highlightedItem, setHighlightedItem] = useState<string | null>(null);
+
+  const itemRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>({});
+
+  // Create refs for each item that can be highlighted
+  if (itinerary) {
+      itinerary.dailyItineraries.forEach((day, dayIndex) => {
+          day.activities.forEach((_, activityIndex) => {
+              const id = `activity-${dayIndex}-${activityIndex}`;
+              if (!itemRefs.current[id]) itemRefs.current[id] = createRef<HTMLDivElement>();
+          });
+          day.food.forEach((_, foodIndex) => {
+              const id = `food-${dayIndex}-${foodIndex}`;
+              if (!itemRefs.current[id]) itemRefs.current[id] = createRef<HTMLDivElement>();
+          });
+      });
+  }
+
+  useEffect(() => {
+    if (highlightedItem && itemRefs.current[highlightedItem]?.current) {
+        itemRefs.current[highlightedItem].current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+        });
+    }
+  }, [highlightedItem]);
+
+  const handleMarkerClick = (itemId: string) => {
+    setView('list');
+    // Use a timeout to ensure the view has switched before we try to scroll
+    setTimeout(() => setHighlightedItem(itemId), 100);
+    // Reset highlight after a delay for a "flash" effect
+    setTimeout(() => setHighlightedItem(null), 2000);
+  };
+
 
   const handleDownload = async () => {
+    if (view === 'map') {
+      alert("Please switch to List View to download the itinerary as a PDF.");
+      return;
+    }
     const content = itineraryContentRef.current;
     if (!content) return;
     
     setIsDownloading(true);
     try {
         const canvas = await html2canvas(content, {
-            scale: 2, // Higher scale for better quality
+            scale: 2,
             useCORS: true,
             backgroundColor: window.getComputedStyle(document.body).backgroundColor,
         });
@@ -265,7 +313,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
 
   return (
     <div>
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-6">
             <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">{itinerary.tripTitle}</h1>
                 <p className="mt-2 text-lg text-slate-600 dark:text-slate-300">{itinerary.tripOverview}</p>
@@ -274,7 +322,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
                 <button
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    className="px-4 py-2 bg-cyan-600 text-white font-semibold rounded-lg hover:bg-cyan-700 transition-colors disabled:bg-slate-400 flex items-center gap-2"
+                    className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:bg-slate-400 flex items-center gap-2"
                 >
                     <DownloadIcon className="h-5 w-5"/>
                     {isDownloading ? t('downloadingPdf') : t('download')}
@@ -282,22 +330,66 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, isLoadin
             </div>
         </div>
 
-        {/* This div is what gets captured for the PDF */}
-        <div ref={itineraryContentRef} className="p-4 bg-white dark:bg-slate-800 rounded-lg">
-            {itinerary.costEstimation && <CostEstimationDisplay cost={itinerary.costEstimation} />}
-            {itinerary.flightInfo && <FlightInfoDisplay flightInfo={itinerary.flightInfo} />}
-            <AccommodationSection accommodation={itinerary.accommodation} destination={destination} />
-            <GeneralTipsSection tips={itinerary.generalTips} />
-
-            <div className="space-y-8 mt-8">
-            {(itinerary.dailyItineraries || []).map(dayPlan => (
-                <DailyPlanCard key={dayPlan.day} dayPlan={dayPlan} destination={destination} />
+        <div className="mb-4">
+          <div className="inline-flex items-center gap-1 bg-slate-200 dark:bg-slate-700 p-1 rounded-full">
+            {(['list', 'map'] as ItineraryView[]).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-full flex items-center gap-2 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 ${
+                  view === v ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-400 shadow' : 'text-slate-600 dark:text-slate-300 hover:bg-white/50 dark:hover:bg-slate-900/20'
+                }`}
+              >
+                {v === 'list' ? <ListIcon className="h-5 w-5" /> : <MapIcon className="h-5 w-5" />}
+                {t(`view_${v}`)}
+              </button>
             ))}
+          </div>
+        </div>
+
+        <div className="relative">
+          {isUpdating && (
+              <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 flex flex-col items-center justify-center rounded-lg z-20 transition-opacity duration-300">
+                  <svg className="animate-spin h-8 w-8 text-cyan-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="mt-3 text-lg font-semibold text-slate-700 dark:text-slate-200">{t('updatingItinerary')}</p>
+              </div>
+          )}
+          
+          <div className={view !== 'list' ? 'hidden' : ''}>
+              <div ref={itineraryContentRef} className={`p-4 bg-white dark:bg-slate-800 rounded-lg ${isUpdating ? 'opacity-50' : ''}`}>
+                  {itinerary.costEstimation && <CostEstimationDisplay cost={itinerary.costEstimation} />}
+                  {itinerary.flightInfo && <FlightInfoDisplay flightInfo={itinerary.flightInfo} />}
+                  <AccommodationSection accommodation={itinerary.accommodation} destination={destination} />
+                  <GeneralTipsSection tips={itinerary.generalTips} />
+                  {itinerary.packingList && <PackingListDisplay packingList={itinerary.packingList} />}
+
+                  <div className="space-y-8 mt-8">
+                  {(itinerary.dailyItineraries || []).map((dayPlan, dayIndex) => (
+                      <DailyPlanCard 
+                        key={dayPlan.day} 
+                        dayPlan={dayPlan} 
+                        destination={destination}
+                        highlightedItem={highlightedItem}
+                        itemRefs={itemRefs.current}
+                        dayIndex={dayIndex}
+                      />
+                  ))}
+                  </div>
+                  
+                  <SourcesSection sources={itinerary.sources} />
+              </div>
+          </div>
+          
+          {view === 'map' && (
+            <div className={`rounded-lg overflow-hidden ${isUpdating ? 'opacity-50' : ''}`}>
+              <MapView itinerary={itinerary} onMarkerClick={handleMarkerClick} />
             </div>
-            
-            <SourcesSection sources={itinerary.sources} />
+          )}
         </div>
         
+        <ItineraryEditor onModify={onModify} isUpdating={isUpdating} />
+
         <div className="mt-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-lg border border-slate-200 dark:border-slate-700">
             <h3 className="font-bold text-xl text-slate-800 dark:text-slate-100 mb-3">{t('emailPlan')}</h3>
             <form onSubmit={handleEmailPlan} className="flex flex-col sm:flex-row gap-2">
